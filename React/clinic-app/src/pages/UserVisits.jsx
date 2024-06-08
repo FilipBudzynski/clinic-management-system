@@ -40,10 +40,6 @@ const UserVisits = () => {
       <div className="container my-4">
         <h1>My Visits</h1>
         <CurrentUserVisitsTable visits={visits} onApply={onApply} />
-        <button className="whiteButton" variant="primary" onClick={handleShow}>
-          Add User
-        </button>
-        <AddUserModal show={show} handleClose={handleClose} />
       </div>
       <div className="blueBackground"></div>
     </div>

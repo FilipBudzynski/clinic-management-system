@@ -10,6 +10,7 @@ from schemas import Groupe
 from sqlalchemy.orm.exc import StaleDataError
 from datetime import datetime, timedelta
 from sqlalchemy.orm.strategy_options import joinedload
+from sqlalchemy import CursorResult, func
 
 router = APIRouter(prefix="/api", tags=["api"])
 
@@ -39,6 +40,7 @@ def ensure_user_group(
     "/users",
     status_code=status.HTTP_201_CREATED,
     response_model=schemas.User,
+    dependencies=[Depends(ensure_user_group)],
 )
 async def create_user(user: schemas.UserBase, db: db_dependency):
     db_user = models.User(**user.model_dump())
@@ -144,6 +146,30 @@ async def update_doctor(doctor_id: int, doctor: schemas.DoctorEdit, db: db_depen
     return db_doctor
 
 
+@router.delete("/doctors/{doctor_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_doctor(doctor_id: int, db: db_dependency):
+    # Check if the user exists
+    db_doctor = db.query(models.Doctor).filter(models.Doctor.id == doctor_id).first()
+    if db_doctor is None:
+        raise HTTPException(status_code=404, detail="Doctor not found")
+
+    schedules_to_remove = (
+        db.query(models.Schedule)
+        .filter(models.Schedule.doctor_id == db_doctor.id)
+        .all()
+    )
+    for schedule in schedules_to_remove:
+        await delete_schedule(schedule_id=schedule.id, db=db)
+    try:
+        db.delete(db_doctor)
+        db.commit()
+        return None
+    except StaleDataError:
+        raise HTTPException(
+            status_code=409, detail="Data has changed. Please refresh and try again."
+        )
+
+
 @router.get("/doctors/{doctor_id}", status_code=status.HTTP_200_OK)
 async def read_doctor(doctor_id: int, db: db_dependency):
     doctor = db.query(models.Doctor).filter(models.Doctor.id == doctor_id).first()
@@ -155,9 +181,10 @@ async def read_doctor(doctor_id: int, db: db_dependency):
 @router.get(
     "/doctors",
     status_code=status.HTTP_200_OK,
-    dependencies=[Depends(ensure_user_group)],
+    #dependencies=[Depends(ensure_user_group)],
 )
 async def read_all_doctors(db: db_dependency, skip: int = 0, limit: int = 100):
+    print("GOOOWNO")
     doctors = db.query(models.Doctor).offset(skip).limit(limit).all()
     return doctors
 
@@ -206,7 +233,11 @@ async def read_schedule(schedule_id: int, db: db_dependency):
     return schedule
 
 
-@router.get("/schedules", status_code=status.HTTP_200_OK)
+@router.get(
+    "/schedules",
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(ensure_user_group)],
+)
 async def read_all_schedules(db: db_dependency, skip: int = 0, limit: int = 100):
     schedules = (
         db.query(models.Schedule)
@@ -216,6 +247,41 @@ async def read_all_schedules(db: db_dependency, skip: int = 0, limit: int = 100)
         .all()
     )
     return schedules
+
+
+@router.delete("/schedules/{schedule_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_schedule(schedule_id: int, db: db_dependency):
+    db_schedule = (
+        db.query(models.Schedule).filter(models.Schedule.id == schedule_id).first()
+    )
+    if db_schedule is None:
+        raise HTTPException(status_code=404, detail="Schedule not found")
+
+    visits_to_remove = (
+        db.query(models.Visit)
+        .filter(models.Visit.doctor_id == db_schedule.doctor_id)
+        .filter(func.date(models.Visit.visit_date) == db_schedule.day)
+        .filter(func.time(models.Visit.visit_date) >= db_schedule.start)
+        .filter(func.time(models.Visit.visit_date) <= db_schedule.finish)
+        .all()
+    )
+    for visit in visits_to_remove:
+        try:
+            db.delete(visit)
+            db.commit()
+        except:
+            raise HTTPException(
+                status_code=409,
+                detail="Data has changed. Please refresh and try again.",
+            )
+    try:
+        db.delete(db_schedule)
+        db.commit()
+        return None
+    except StaleDataError:
+        raise HTTPException(
+            status_code=409, detail="Data has changed. Please refresh and try again."
+        )
 
 
 @router.post(

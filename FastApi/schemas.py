@@ -5,11 +5,11 @@ from pydantic import BaseModel, EmailStr
 
 
 class Speciality(str, Enum):
-    Dermatolog = "Dermatolog"
-    Cardiolog = "Cardiolog"
-    Neurolog = "Neurolog"
-    Orthopedic = "Orthopedic"
-    Pediatric = "Pediatric"
+    Dermatolog = "Dermatologist"
+    Cardiolog = "Cardiologist"
+    Neurolog = "Neurologist"
+    Orthopedic = "Orthopaedist"
+    Pediatric = "Pediatrician"
 
 
 class Groupe(str, Enum):
